@@ -2,6 +2,8 @@ package dag
 
 import (
 	"fmt"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/eapache/queue"
@@ -108,6 +110,7 @@ func (s *Scheduler[C]) Run() {
 	}
 	for i := 0; i < len(s.NodeGroup.Nws); i++ {
 		result := <-s.Done
+		s.ExecResults[result.NodeWrapper.Node.GetName()] = result
 		if result.Error != nil {
 			fmt.Printf("[%v] run error: %v\n", result.NodeWrapper.Node.GetName(), result.Error)
 		}
@@ -133,4 +136,64 @@ func (s *Scheduler[C]) runNode(nw NodeWrapper[C]) {
 			Error:         err,
 		}
 	}()
+}
+
+func (s *Scheduler[C]) PrintDagGraph() {
+	var dotBuilder strings.Builder
+	dotBuilder.WriteString("digraph G {\n")
+	dotBuilder.WriteString("  rankdir=LR;\n")
+	dotBuilder.WriteString("  nw [shape=box style=filled];\n\n")
+
+	// 生成节点定义
+	for _, nw := range s.NodeGroup.Nws {
+		result, exists := s.ExecResults[nw.Node.GetName()]
+		if !exists {
+			dotBuilder.WriteString(fmt.Sprintf("  %q [label=\"%s\\n(Not Executed)\" fillcolor=gray90];\n",
+				nw.Node.GetName(), nw.Node.GetName()))
+			continue
+		}
+
+		status := "Ok"
+		fillColor := "#90EE90" // 浅绿色
+		if result.Error != nil {
+			status = "Error"
+			fillColor = "#FFB6C1" // 浅红色
+		}
+		duration := result.ExecEndTime.Sub(result.ExecStartTime).Round(time.Millisecond)
+
+		dotBuilder.WriteString(fmt.Sprintf("  %q [label=\"%s\\n%s\\n%s\" fillcolor=\"%s\"];\n",
+			nw.Node.GetName(), nw.Node.GetName(), status, duration, fillColor))
+	}
+
+	// 生成边定义
+	dotBuilder.WriteString("\n")
+	for _, nw := range s.NodeGroup.Nws {
+		for _, dep := range nw.Node.GetDependOns() {
+			depResult, depExists := s.ExecResults[dep]
+			if !depExists {
+				dotBuilder.WriteString(fmt.Sprintf("  %q -> %q [label=\"(dep not executed)\" style=dashed];\n",
+					dep, nw.Node.GetName()))
+				continue
+			}
+
+			status := "ok"
+			color := "green"
+			if depResult.Error != nil {
+				status = "error"
+				color = "red"
+			}
+			duration := depResult.ExecEndTime.Sub(depResult.ExecStartTime).Round(time.Millisecond)
+
+			dotBuilder.WriteString(fmt.Sprintf("  %q -> %q [label=\"%s (%s)\" color=%s];\n",
+				dep, nw.Node.GetName(), status, duration, color))
+		}
+	}
+
+	dotBuilder.WriteString("}\n")
+	// 修正URL编码逻辑
+	dotCode := dotBuilder.String()
+	// 使用PathEscape代替QueryEscape，并手动处理特殊字符
+	encoded := url.PathEscape(dotCode) // 这里会自动将空格转为%20
+	graphURL := fmt.Sprintf("https://dreampuf.github.io/GraphvizOnline/#%s", encoded)
+	fmt.Printf("graph: %v\n", graphURL)
 }

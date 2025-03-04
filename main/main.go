@@ -45,5 +45,6 @@ func main() {
 		panic("circular dependency check failed!")
 	}
 	scheduler.Run()
+	scheduler.PrintDagGraph() // 打印DAG调用图
 	fmt.Printf("Trace: %v", basic.ToBeautifulJson(nil, scheduler.DagCtx.LogTrace.Trace.ToSlice()))
 }
