@@ -67,7 +67,10 @@ func NewScheduler[C any](dCtx C, nodeGroup *NodeGroup[C], calcFunc func(dCtx C, 
 // CircularCheck 循环依赖检查
 func (s *Scheduler[C]) CircularCheck() bool {
 	que := queue.New()
-	inDegree := s.InDegree
+	inDegree := make(map[string]int, len(s.InDegree))
+	for k, v := range s.InDegree {
+		inDegree[k] = v
+	}
 
 	for _, nw := range s.NodeGroup.Nws {
 		if inDegree[nw.Node.GetName()] == 0 {
